@@ -1,12 +1,23 @@
 #include "U8g2lib.h"
 #include "bitmap.h"
 #include <Arduino.h>
-#include <cmath>
 #include <ezButton.h>
+#include <bits/stdc++.h>
 #include <ArduinoJson.h>
 #include <HardwareBLESerial.h>
+// gps
+// #include <NMEAGPS.h>
+// #include <HardwareSerial.h>
+// dual core stuff
+#ifdef __cplusplus
+#include <atomic>
+#else
+#include <stdatomic.h>
+#endif
 
-U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R0, /* clock=*/ 18, /* data=*/ 23, /* CS=*/ 5); // ESP32
+using namespace std;
+
+U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R2, /* clock=*/ 18, /* data=*/ 23, /* CS=*/ 5); // ESP32
 
 // init ble
 HardwareBLESerial &bleSerial = HardwareBLESerial::getInstance();
@@ -16,26 +27,29 @@ StaticJsonDocument<300> incomingData;
 
 // status
 // call
-struct {
+struct callinfo : public std::mutex {
   String number;
   String name;
   bool state;
-} incomingCall;
+};
+callinfo incomingCall = { };
 
 //noti
-struct {
+struct notiinfo : public std::mutex{
   String src;
   String title;
   String body;
-} currentNoti;
+};
+notiinfo currentNoti = { };
 
-bool isNotiNew = false;
+atomic<bool> isNotiNew;
 
 // music
-struct {
+struct musicinfo : public std::mutex{
   String artist;
   String track;
-} currentMusic;
+};
+musicinfo currentMusic = { };
 
 // parser for incoming message
 bool incomingParser(String str) {
@@ -46,6 +60,84 @@ bool incomingParser(String str) {
     return false;
   }
   return true;
+}
+
+TaskHandle_t ble;
+void updateBle(void * pvParameters) {
+  while (true) {
+    // BLE stuff
+    // this must be called regularly to perform BLE updates
+    bleSerial.poll(); 
+
+    while (bleSerial.availableLines() > 0) {
+        Serial.print("Raw: ");
+        char line[256]; 
+        bleSerial.readLine(line, 256);
+        String decodedMessage = String(line).substring(4, (strlen(line)-1));
+        Serial.println(decodedMessage);
+
+        if (incomingParser(decodedMessage)) {
+            if (incomingData["t"].as<String>() == "musicinfo"){
+                // saving data        
+                currentMusic.lock(); 
+                currentMusic.artist = incomingData["artist"].as<String>();
+                currentMusic.track = incomingData["track"].as<String>();
+
+                // displaying data
+                Serial.print("[Music] ");
+                Serial.print(currentMusic.artist); 
+                Serial.print(" - "); 
+                Serial.println(currentMusic.track);  
+                currentMusic.unlock();
+            }
+            else if (incomingData["t"].as<String>() == "notify"){
+                // saving data
+                currentNoti.lock();
+                currentNoti.src = incomingData["src"].as<String>();
+                currentNoti.title = incomingData["title"].as<String>();
+                currentNoti.body = incomingData["body"].as<String>();
+
+                // displaying data
+                Serial.print("[Notification] ");
+                Serial.print(currentNoti.src); 
+                Serial.print(": "); 
+                Serial.println(currentNoti.title);
+                Serial.println(currentNoti.body);
+                isNotiNew.store(true);
+                currentNoti.unlock();
+            }
+            else if (incomingData["t"].as<String>() == "call"){
+                if (incomingData["cmd"].as<String>() == "incoming" && !incomingCall.state) {
+                    // saving data
+                    incomingCall.lock();
+                    incomingCall.name = incomingData["name"].as<String>();
+                    incomingCall.number = incomingData["number"].as<String>();
+                    incomingCall.state = true;
+
+                    // displaying data
+                    Serial.print("[Incoming Call] ");
+                    Serial.print(incomingCall.name);
+                    Serial.print("("); Serial.print(incomingCall.number); Serial.println(")");
+                    incomingCall.unlock();
+                }
+                else if (incomingData["cmd"].as<String>() == "end" && incomingCall.state) {
+                    // saving data
+                    incomingCall.lock();
+                    incomingCall.state = false;
+                    incomingCall.unlock();
+
+                    // displaying data
+                    Serial.print("Call ended");
+                }
+            }
+        }
+    }
+  }
+  // slow down dude - update notification
+  digitalWrite(2, HIGH);
+  delay(100);
+  digitalWrite(2, LOW);
+  delay(100);
 }
 
 // init button
@@ -96,24 +188,34 @@ void drawInfo(int gps_fix, String currentTime, String date, int gps_speed, Strin
 
 void drawMusicInfo() {
   u8g2.setFont(u8g2_font_6x12_te);
+  currentMusic.lock();
   u8g2.drawStr(3, 16+10, (currentMusic.artist).c_str());
   u8g2.drawStr(3, 30+10, (currentMusic.track).c_str());
+  currentMusic.unlock();
 }
 
 void drawCallInfo() {
   u8g2.setFont(u8g2_font_6x12_te);
+  incomingCall.lock();
   u8g2.drawStr(3, 16+10, (incomingCall.name).c_str());
   u8g2.drawStr(3, 30+10, (incomingCall.number).c_str());
+  incomingCall.unlock();
 }
 
 void drawRecentNoti() {
   u8g2.setFont(u8g2_font_6x12_te);
+  currentNoti.lock();
   u8g2.drawStr(3, 16+10, (currentNoti.src).c_str());
   u8g2.drawStr(3, 26+10, (currentNoti.title).c_str());
   u8g2.drawStr(3, 36+10, (currentNoti.body).c_str());
+  currentNoti.unlock();
 }
 
 void setup() {
+  // enable onboard led
+  pinMode(2, OUTPUT);
+  // define varible state
+  isNotiNew.store(false);
   // u8g.setFont(u8g_font_tpssb);  // no need to set the font, as we are not drawing any strings
   u8g2.setColorIndex(1);  // set the color to white
   u8g2.begin();
@@ -124,69 +226,11 @@ void setup() {
       delay(1000);
     }
   }
+  // setup ble listener
+  xTaskCreatePinnedToCore(updateBle, "", 10000, NULL, 1, &ble, 1);
 }
 
 void loop() {
-  // BLE stuff
-  // this must be called regularly to perform BLE updates
-  bleSerial.poll();
-
-  while (bleSerial.availableLines() > 0) {
-      Serial.print("Raw: ");
-      char line[256]; 
-      bleSerial.readLine(line, 256);
-      String decodedMessage = String(line).substring(4, (strlen(line)-1));
-      Serial.println(decodedMessage);
-
-      if (incomingParser(decodedMessage)) {
-          if (incomingData["t"].as<String>() == "musicinfo"){
-              // saving data              
-              currentMusic.artist = incomingData["artist"].as<String>();
-              currentMusic.track = incomingData["track"].as<String>();
-
-              // displaying data
-              Serial.print("[Music] ");
-              Serial.print(currentMusic.artist); 
-              Serial.print(" - "); 
-              Serial.println(currentMusic.track);  
-          }
-          else if (incomingData["t"].as<String>() == "notify"){
-              // saving data
-              currentNoti.src = incomingData["src"].as<String>();
-              currentNoti.title = incomingData["title"].as<String>();
-              currentNoti.body = incomingData["body"].as<String>();
-
-              // displaying data
-              Serial.print("[Notification] ");
-              Serial.print(currentNoti.src); 
-              Serial.print(": "); 
-              Serial.println(currentNoti.title);
-              Serial.println(currentNoti.body);
-              isNotiNew = true;
-          }
-          else if (incomingData["t"].as<String>() == "call"){
-              if (incomingData["cmd"].as<String>() == "incoming" && !incomingCall.state) {
-                  // saving data
-                  incomingCall.name = incomingData["name"].as<String>();
-                  incomingCall.number = incomingData["number"].as<String>();
-                  incomingCall.state = true;
-
-                  // displaying data
-                  Serial.print("[Incoming Call] ");
-                  Serial.print(incomingCall.name);
-                  Serial.print("("); Serial.print(incomingCall.number); Serial.println(")");
-              }
-              else if (incomingData["cmd"].as<String>() == "end" && incomingCall.state) {
-                  // saving data
-                  incomingCall.state = false;
-
-                  // displaying data
-                  Serial.print("Call ended");
-              }
-          }
-      }
-  }
-
   // tracking btn + switch page
   upbtn.loop();
   downbtn.loop();
@@ -205,8 +249,6 @@ void loop() {
     if (isNotiNew) {
       drawFrame_tab("Incoming-Notification");
       drawRecentNoti();
-      isNotiNew = false;
-      delay(250);
       continue;
     } else if (incomingCall.state) {
       drawFrame_tab("Incoming-Call");
@@ -227,6 +269,12 @@ void loop() {
         drawRecentNoti();
       default: break;
     }
-  } while ( u8g2.nextPage() ); 
-  delay(250);
+  } while ( u8g2.nextPage() );
+  //  checking pause needed to read notification
+  if (isNotiNew) {
+    isNotiNew = false;
+    delay(1500);  
+  }
+  u8g2.clearBuffer(); 
+  delay(150);
 }
