@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 #include <HardwareBLESerial.h>
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0); // [full framebuffer, size = 1024 bytes]
+U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R0, /* clock=*/ 18, /* data=*/ 23, /* CS=*/ 5); // ESP32
 
 // init ble
 HardwareBLESerial &bleSerial = HardwareBLESerial::getInstance();
@@ -49,8 +49,8 @@ bool incomingParser(String str) {
 }
 
 // init button
-ezButton upbtn(19);
-ezButton downbtn(18);
+ezButton upbtn(21);
+ezButton downbtn(19);
 
 // init page
 int page = 0;
@@ -95,19 +95,19 @@ void drawInfo(int gps_fix, String currentTime, String date, int gps_speed, Strin
 }
 
 void drawMusicInfo() {
-  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFont(u8g2_font_6x12_te);
   u8g2.drawStr(3, 16+10, (currentMusic.artist).c_str());
   u8g2.drawStr(3, 30+10, (currentMusic.track).c_str());
 }
 
 void drawCallInfo() {
-  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFont(u8g2_font_6x12_te);
   u8g2.drawStr(3, 16+10, (incomingCall.name).c_str());
   u8g2.drawStr(3, 30+10, (incomingCall.number).c_str());
 }
 
 void drawRecentNoti() {
-  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFont(u8g2_font_6x12_te);
   u8g2.drawStr(3, 16+10, (currentNoti.src).c_str());
   u8g2.drawStr(3, 26+10, (currentNoti.title).c_str());
   u8g2.drawStr(3, 36+10, (currentNoti.body).c_str());
@@ -229,5 +229,4 @@ void loop() {
     }
   } while ( u8g2.nextPage() ); 
   delay(250);
-  u8g2.clearBuffer();
 }
