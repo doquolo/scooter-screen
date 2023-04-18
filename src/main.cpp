@@ -6,8 +6,8 @@
 #include <ArduinoJson.h>
 #include <HardwareBLESerial.h>
 // gps
-// #include <NMEAGPS.h>
-// #include <HardwareSerial.h>
+#include <NMEAGPS.h>
+#include <HardwareSerial.h>
 // dual core stuff
 #ifdef __cplusplus
 #include <atomic>
@@ -17,10 +17,26 @@
 
 using namespace std;
 
+// lcd
 U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R2, /* clock=*/ 18, /* data=*/ 23, /* CS=*/ 5); // ESP32
 
 // init ble
 HardwareBLESerial &bleSerial = HardwareBLESerial::getInstance();
+
+// init gps
+NMEAGPS gps;
+gps_fix fix;
+HardwareSerial neogps(2);
+// current gps info
+struct GPSinfo{
+  float speed;
+  float latt;
+  float longt; 
+  float sat;
+  int time;
+};
+GPSinfo currentGPS = { };
+
 
 // arduinojson
 StaticJsonDocument<300> incomingData;
@@ -62,8 +78,8 @@ bool incomingParser(String str) {
   return true;
 }
 
-TaskHandle_t ble;
-void updateBle(void * pvParameters) {
+TaskHandle_t updateData;
+void updatedata(void * pvParameters) {
   while (true) {
     // BLE stuff
     // this must be called regularly to perform BLE updates
@@ -134,10 +150,7 @@ void updateBle(void * pvParameters) {
     }
   }
   // slow down dude - update notification
-  digitalWrite(2, HIGH);
-  delay(100);
-  digitalWrite(2, LOW);
-  delay(100);
+  delay(200);
 }
 
 // init button
@@ -148,11 +161,10 @@ ezButton downbtn(19);
 int page = 0;
 
 // demo data
-int gps_fix = 12;
+int gps_fixes = 12;
 String currentTime = "10:46";
 String date = "Apr 16, 2023";
 int gps_speed = 30;
-String gps_heading = "North"; 
 
 
 void drawFrame_home() {
@@ -165,24 +177,26 @@ void drawFrame_tab(String str) {
   u8g2.drawStr(3, 9, str.c_str());
 }
 
-void drawInfo(int gps_fix, String currentTime, String date, int gps_speed, String gps_heading) {
+void drawInfo(int gps_fix, String currentTime, String date, int gps_speed) {
   u8g2.setColorIndex(1);
 
-  u8g2.setFont(u8g2_font_6x10_tr);
-  String topLine = "Fix: " + String(gps_fix);
+  u8g2.setFont(u8g2_font_5x7_tr);
+  String topLine = "Sat: " + String(gps_fix);
   u8g2.drawStr(3, 9, topLine.c_str());
+  u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(5, 50, date.c_str());
-  u8g2.drawStr(96, 45, "km/h");
-  // math time 
-  int heading_len = gps_heading.length();
-  int totalPixel = (heading_len*6)+(heading_len-1);
-  int totalEmptySpace = 42 - totalPixel;
+  u8g2.drawStr(95, 50, "km/h");
+  // // math time 
+  // int heading_len = gps.length();
+  // int totalPixel = (heading_len*6)+(heading_len-1);
+  // int totalEmptySpace = 42 - totalPixel;
 
-  u8g2.drawStr(89+round(totalEmptySpace/2), 55, gps_heading.c_str());
+  // u8g2.drawStr(89+round(totalEmptySpace/2), 55, gps.c_str());
 
   u8g2.setFont(u8g2_font_crox5hb_tn);
   u8g2.drawStr(3, 37, currentTime.c_str());
-  u8g2.drawStr(93, 35, String(gps_speed).c_str());
+  String speed = (gps_speed < 10) ? ("0"+String(gps_speed)) : String(gps_speed);
+  u8g2.drawStr(93, 40, speed.c_str());
 
 }
 
@@ -212,8 +226,8 @@ void drawRecentNoti() {
 }
 
 void setup() {
-  // enable onboard led
-  pinMode(2, OUTPUT);
+  // begin gps serial
+  neogps.begin(9600, SERIAL_8N1, 16, 17);
   // define varible state
   isNotiNew.store(false);
   // u8g.setFont(u8g_font_tpssb);  // no need to set the font, as we are not drawing any strings
@@ -227,7 +241,7 @@ void setup() {
     }
   }
   // setup ble listener
-  xTaskCreatePinnedToCore(updateBle, "", 10000, NULL, 1, &ble, 1);
+  xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
 }
 
 void loop() {
@@ -258,7 +272,7 @@ void loop() {
     switch (page) {
       case 0: // homepage
         drawFrame_home();
-        drawInfo(gps_fix, currentTime, date, gps_speed, gps_heading);
+        drawInfo(currentGPS.sat, currentTime, date, currentGPS.speed);
         break;
       case 1: // music player
         drawFrame_tab("Music");
@@ -277,4 +291,20 @@ void loop() {
   }
   u8g2.clearBuffer(); 
   delay(150);
+  // Acquiring gps data
+  while (gps.available(neogps)) {
+      fix = gps.read();
+      currentGPS.speed = fix.speed_kph();
+      currentGPS.latt = fix.latitude();
+      currentGPS.longt = fix.longitude();
+      currentGPS.sat = fix.satellites;
+      currentGPS.time = fix.dateTime_ms();
+      Serial.print(currentGPS.latt);
+      Serial.print("-");
+      Serial.print(currentGPS.longt);
+      Serial.print("-");
+      Serial.print(currentGPS.sat);
+      Serial.print("-");
+      Serial.println(currentGPS.time);
+  }
 }
