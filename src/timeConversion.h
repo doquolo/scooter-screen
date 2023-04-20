@@ -58,10 +58,10 @@ dateTime convertToLocalTime(int year, int month, int date, int hours, int minute
                 }
             }
         }
-    }
-    else {
-        // cout << "not end of month" << endl;
-        date++;
+        else {
+            // cout << "not end of month" << endl;
+            date++;
+        }
     }
     // check whether the next year or not
     if (month > 12) {
