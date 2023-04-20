@@ -33,9 +33,11 @@ struct GPSinfo{
   float latt;
   float longt; 
   float sat;
-  int time;
+  int hours, minutes, year, month, date;
 };
 GPSinfo currentGPS = { };
+// month conversion
+String monthName[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 
 // arduinojson
@@ -160,12 +162,9 @@ ezButton downbtn(19);
 // init page
 int page = 0;
 
-// demo data
-int gps_fixes = 12;
-String currentTime = "10:46";
-String date = "Apr 16, 2023";
-int gps_speed = 30;
-
+// placeholder data
+String currentTime = "00:00";
+String date = "Jan 1, 2023";
 
 void drawFrame_home() {
   u8g2.drawXBMP(0, 0, 128, 64, frame_homepage);
@@ -228,23 +227,52 @@ void drawRecentNoti() {
 void setup() {
   // begin gps serial
   neogps.begin(9600, SERIAL_8N1, 16, 17);
+  Serial.begin(9600);
   // define varible state
   isNotiNew.store(false);
   // u8g.setFont(u8g_font_tpssb);  // no need to set the font, as we are not drawing any strings
   u8g2.setColorIndex(1);  // set the color to white
   u8g2.begin();
-  Serial.begin(115200);
   if (!bleSerial.beginAndSetupBLE("panhdtw")) {
     while (true) {
       Serial.println("failed to initialize HardwareBLESerial!");
       delay(1000);
     }
   }
+  Serial.println("");
   // setup ble listener
   xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
 }
 
 void loop() {
+  // Acquiring gps data
+  // TODO: collect epoch time to calculate local time / write function to convert to local time (UTC +7)
+  while (gps.available(neogps)) {
+      fix = gps.read();
+      
+      currentGPS.speed = fix.speed_kph();
+      currentGPS.latt = fix.latitude();
+      currentGPS.longt = fix.longitude();
+      currentGPS.sat = fix.satellites;
+      currentGPS.hours = fix.dateTime.hours;
+      currentGPS.minutes = fix.dateTime.minutes;
+      currentGPS.year = fix.dateTime.full_year();
+      currentGPS.month = fix.dateTime.month;
+      currentGPS.date = fix.dateTime.date;
+      
+      Serial.print(currentGPS.sat);
+      Serial.print("-");
+      Serial.print(currentGPS.latt);
+      Serial.print("-");
+      Serial.print(currentGPS.longt);
+      Serial.print("-");
+      Serial.print(fix.dateTime.hours);
+      Serial.print("-");
+      Serial.println(fix.dateTime.minutes);
+      Serial.print("-");
+      Serial.println(fix.dateTime_cs);
+      
+  }
   // tracking btn + switch page
   upbtn.loop();
   downbtn.loop();
@@ -270,17 +298,25 @@ void loop() {
       continue;
     }
     switch (page) {
-      case 0: // homepage
+      case 0: { // homepage 
         drawFrame_home();
+        String hour = (currentGPS.hours < 10) ? "0"+String(currentGPS.hours) : String(currentGPS.hours);
+        String minute = (currentGPS.minutes < 10) ? "0"+String(currentGPS.minutes) : String(currentGPS.minutes);
+        currentTime = hour + ":" + minute;
+        date = monthName[currentGPS.month-1] + " " + String(currentGPS.date) + ", " + String(currentGPS.year);
         drawInfo(currentGPS.sat, currentTime, date, currentGPS.speed);
         break;
-      case 1: // music player
+      }
+      case 1: { // music player 
         drawFrame_tab("Music");
         drawMusicInfo();
         break;
-      case 2: // recent notification
+      }
+      case 2: { // recent notification 
         drawFrame_tab("Recent");
         drawRecentNoti();
+        break;
+      }
       default: break;
     }
   } while ( u8g2.nextPage() );
@@ -290,21 +326,5 @@ void loop() {
     delay(1500);  
   }
   u8g2.clearBuffer(); 
-  delay(150);
-  // Acquiring gps data
-  while (gps.available(neogps)) {
-      fix = gps.read();
-      currentGPS.speed = fix.speed_kph();
-      currentGPS.latt = fix.latitude();
-      currentGPS.longt = fix.longitude();
-      currentGPS.sat = fix.satellites;
-      currentGPS.time = fix.dateTime_ms();
-      Serial.print(currentGPS.latt);
-      Serial.print("-");
-      Serial.print(currentGPS.longt);
-      Serial.print("-");
-      Serial.print(currentGPS.sat);
-      Serial.print("-");
-      Serial.println(currentGPS.time);
-  }
+  // delay(150);
 }
