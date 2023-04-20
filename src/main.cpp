@@ -1,5 +1,6 @@
 #include "U8g2lib.h"
 #include "bitmap.h"
+#include "timeConversion.h"
 #include <Arduino.h>
 #include <ezButton.h>
 #include <bits/stdc++.h>
@@ -239,6 +240,29 @@ void setup() {
       delay(1000);
     }
   }
+  // waiting to pick up gps data
+  u8g2.clearBuffer(); 
+  
+//  Serial.print("Waiting for GPS datetime");
+//  while (true) {
+//    while (gps.available(neogps)) {
+//      fix = gps.read();
+//      if (fix.dateTime.date != 0) {
+//        currentGPS.speed = fix.speed_kph();
+//        currentGPS.latt = fix.latitude();
+//        currentGPS.longt = fix.longitude();
+//        currentGPS.sat = fix.satellites;
+//        currentGPS.hours = fix.dateTime.hours;
+//        currentGPS.minutes = fix.dateTime.minutes;
+//        currentGPS.year = fix.dateTime.year;
+//        currentGPS.month = fix.dateTime.month;
+//        currentGPS.date = fix.dateTime.date; 
+//        break;
+//      }
+//    }
+//    Serial.print(".");
+//    delay(100);
+//  }
   Serial.println("");
   // setup ble listener
   xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
@@ -246,7 +270,6 @@ void setup() {
 
 void loop() {
   // Acquiring gps data
-  // TODO: collect epoch time to calculate local time / write function to convert to local time (UTC +7)
   while (gps.available(neogps)) {
       fix = gps.read();
       
@@ -300,10 +323,11 @@ void loop() {
     switch (page) {
       case 0: { // homepage 
         drawFrame_home();
-        String hour = (currentGPS.hours < 10) ? "0"+String(currentGPS.hours) : String(currentGPS.hours);
-        String minute = (currentGPS.minutes < 10) ? "0"+String(currentGPS.minutes) : String(currentGPS.minutes);
+        dateTime data = convertToLocalTime(currentGPS.year, currentGPS.month, currentGPS.date, currentGPS.hours, currentGPS.minutes, 7);
+        String hour = (data.hours < 10) ? "0"+String(data.hours) : String(data.hours);
+        String minute = (data.minutes < 10) ? "0"+String(data.minutes) : String(data.minutes);
         currentTime = hour + ":" + minute;
-        date = monthName[currentGPS.month-1] + " " + String(currentGPS.date) + ", " + String(currentGPS.year);
+        date = monthName[data.month-1] + " " + String(data.date) + ", " + String(data.year);
         drawInfo(currentGPS.sat, currentTime, date, currentGPS.speed);
         break;
       }
