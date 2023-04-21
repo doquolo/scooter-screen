@@ -29,7 +29,7 @@ NMEAGPS gps;
 gps_fix fix;
 HardwareSerial neogps(2);
 // current gps info
-struct GPSinfo{
+struct GPSinfo : public std::mutex {
   float speed;
   float latt;
   float longt; 
@@ -79,6 +79,32 @@ bool incomingParser(String str) {
     return false;
   }
   return true;
+}
+
+TaskHandle_t GPS;
+void updateGPS(void * pvParameters) {
+    // init gps
+    NMEAGPS gps;
+    gps_fix fix;
+    HardwareSerial neogps(2);
+    neogps.begin(9600, SERIAL_8N1, 16, 17);
+    while (true) {
+      while (gps.available(neogps)) {
+            fix = gps.read();
+            currentGPS.lock();
+            currentGPS.speed = fix.speed_kph();
+            currentGPS.latt = fix.latitude();
+            currentGPS.longt = fix.longitude();
+            currentGPS.sat = fix.satellites;
+            currentGPS.hours = fix.dateTime.hours;
+            currentGPS.minutes = fix.dateTime.minutes;
+            currentGPS.year = fix.dateTime.full_year();
+            currentGPS.month = fix.dateTime.month;
+            currentGPS.date = fix.dateTime.date;
+            currentGPS.unlock();
+        }  
+       delay(250);
+    }
 }
 
 TaskHandle_t updateData;
@@ -242,60 +268,13 @@ void setup() {
   }
   // waiting to pick up gps data
   u8g2.clearBuffer(); 
-  
-//  Serial.print("Waiting for GPS datetime");
-//  while (true) {
-//    while (gps.available(neogps)) {
-//      fix = gps.read();
-//      if (fix.dateTime.date != 0) {
-//        currentGPS.speed = fix.speed_kph();
-//        currentGPS.latt = fix.latitude();
-//        currentGPS.longt = fix.longitude();
-//        currentGPS.sat = fix.satellites;
-//        currentGPS.hours = fix.dateTime.hours;
-//        currentGPS.minutes = fix.dateTime.minutes;
-//        currentGPS.year = fix.dateTime.year;
-//        currentGPS.month = fix.dateTime.month;
-//        currentGPS.date = fix.dateTime.date; 
-//        break;
-//      }
-//    }
-//    Serial.print(".");
-//    delay(100);
-//  }
-  Serial.println("");
   // setup ble listener
   xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
+  // setup gps
+  xTaskCreatePinnedToCore(updateGPS, "", 10000, NULL, 1, &GPS, 0);
 }
 
 void loop() {
-  // Acquiring gps data
-  while (gps.available(neogps)) {
-      fix = gps.read();
-      
-      currentGPS.speed = fix.speed_kph();
-      currentGPS.latt = fix.latitude();
-      currentGPS.longt = fix.longitude();
-      currentGPS.sat = fix.satellites;
-      currentGPS.hours = fix.dateTime.hours;
-      currentGPS.minutes = fix.dateTime.minutes;
-      currentGPS.year = fix.dateTime.full_year();
-      currentGPS.month = fix.dateTime.month;
-      currentGPS.date = fix.dateTime.date;
-      
-      Serial.print(currentGPS.sat);
-      Serial.print("-");
-      Serial.print(currentGPS.latt);
-      Serial.print("-");
-      Serial.print(currentGPS.longt);
-      Serial.print("-");
-      Serial.print(fix.dateTime.hours);
-      Serial.print("-");
-      Serial.println(fix.dateTime.minutes);
-      Serial.print("-");
-      Serial.println(fix.dateTime_cs);
-      
-  }
   // tracking btn + switch page
   upbtn.loop();
   downbtn.loop();
@@ -323,12 +302,14 @@ void loop() {
     switch (page) {
       case 0: { // homepage 
         drawFrame_home();
+        currentGPS.lock();
         dateTime data = convertToLocalTime(currentGPS.year, currentGPS.month, currentGPS.date, currentGPS.hours, currentGPS.minutes, 7);
         String hour = (data.hours < 10) ? "0"+String(data.hours) : String(data.hours);
         String minute = (data.minutes < 10) ? "0"+String(data.minutes) : String(data.minutes);
         currentTime = hour + ":" + minute;
         date = monthName[data.month-1] + " " + String(data.date) + ", " + String(data.year);
         drawInfo(currentGPS.sat, currentTime, date, currentGPS.speed);
+        currentGPS.unlock();
         break;
       }
       case 1: { // music player 
