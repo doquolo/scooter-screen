@@ -43,6 +43,7 @@ String monthName[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", 
 
 // arduinojson
 StaticJsonDocument<300> incomingData;
+DynamicJsonDocument incomingGmaps(512);
 
 // status
 // call
@@ -136,20 +137,24 @@ void updatedata(void * pvParameters) {
                 currentMusic.unlock();
             }
             else if (incomingData["t"].as<String>() == "notify"){
-                // saving data
-                currentNoti.lock();
-                currentNoti.src = incomingData["src"].as<String>();
-                currentNoti.title = incomingData["title"].as<String>();
-                currentNoti.body = incomingData["body"].as<String>();
+                if (incomingData["src"].as<String>() == "GMaps Parser") deserializeJson(incomingGmaps, incomingData["body"].as<String>());
+                else {
+                  // saving data
+                  currentNoti.lock();
+                  currentNoti.src = incomingData["src"].as<String>();
+                  currentNoti.title = incomingData["title"].as<String>();
+                  currentNoti.body = incomingData["body"].as<String>();
 
-                // displaying data
-                Serial.print("[Notification] ");
-                Serial.print(currentNoti.src); 
-                Serial.print(": "); 
-                Serial.println(currentNoti.title);
-                Serial.println(currentNoti.body);
-                isNotiNew.store(true);
-                currentNoti.unlock();
+                  // displaying data
+                  Serial.print("[Notification] ");
+                  Serial.print(currentNoti.src); 
+                  Serial.print(": "); 
+                  Serial.println(currentNoti.title);
+                  Serial.println(currentNoti.body);
+                  isNotiNew.store(true);
+                  currentNoti.unlock();
+                }
+
             }
             else if (incomingData["t"].as<String>() == "call"){
                 if (incomingData["cmd"].as<String>() == "incoming" && !incomingCall.state) {
@@ -251,6 +256,14 @@ void drawRecentNoti() {
   currentNoti.unlock();
 }
 
+void drawDirections() {
+  u8g2.setFont(u8g2_font_6x12_te);
+  u8g2.drawStr(3, 11+10, (incomingGmaps["icon"].as<String>()).c_str());
+  u8g2.drawStr(3, 21+10, (incomingGmaps["next"].as<String>()).c_str());
+  u8g2.drawStr(3, 31+10, (incomingGmaps["remain"].as<String>()).c_str());
+  u8g2.drawStr(3, 41+10, (incomingGmaps["eta"].as<String>()).c_str());
+}
+
 void setup() {
   // begin gps serial
   neogps.begin(9600, SERIAL_8N1, 16, 17);
@@ -279,11 +292,11 @@ void loop() {
   upbtn.loop();
   downbtn.loop();
   if (upbtn.isPressed()) {
-    if (page == 2) page = 0;
+    if (page == 3) page = 0;
     else page++;
   }
   else if (downbtn.isPressed()) {
-    if (page == 0) page = 2;
+    if (page == 0) page = 3;
     else page--;
   }
 
@@ -321,6 +334,10 @@ void loop() {
         drawFrame_tab("Recent");
         drawRecentNoti();
         break;
+      }
+      case 3: { // google maps
+        drawFrame_tab("Directions");
+        drawDirections();
       }
       default: break;
     }
