@@ -1,5 +1,4 @@
 #include "U8g2lib.h"
-#include "bitmap.h"
 #include "timeConversion.h"
 #include <Arduino.h>
 #include <ezButton.h>
@@ -15,6 +14,9 @@
 #else
 #include <stdatomic.h>
 #endif
+
+#include "bitmap.h"
+#include "ic_direction.h"
 
 using namespace std;
 
@@ -43,7 +45,77 @@ String monthName[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", 
 
 // arduinojson
 StaticJsonDocument<300> incomingData;
+
+// ggmaps
 DynamicJsonDocument incomingGmaps(512);
+std::map<String, unsigned char *> icon;
+
+void loadMapAsset() {
+  icon["maneuver_depart"] = maneuver_depart;
+  icon["maneuver_destination"] = maneuver_destination;
+  icon["maneuver_destination_left"] = maneuver_destination_left;
+  icon["maneuver_destination_right"] = maneuver_destination_right;
+  icon["maneuver_destination_straight"] = maneuver_destination_straight;
+  icon["maneuver_fork_left"] = maneuver_fork_left;
+  icon["maneuver_fork_right"] = maneuver_fork_right;
+  icon["maneuver_keep_left"] = maneuver_keep_left;
+  icon["maneuver_keep_right"] = maneuver_keep_right;
+  icon["maneuver_merge"] = maneuver_merge;
+  icon["maneuver_merge_left"] = maneuver_merge_left;
+  icon["maneuver_merge_right"] = maneuver_merge_right;
+  icon["maneuver_name_change"] = maneuver_name_change;
+  icon["maneuver_off_ramp_keep_left"] = maneuver_off_ramp_keep_left;
+  icon["maneuver_off_ramp_keep_right"] = maneuver_off_ramp_keep_right;
+  icon["maneuver_off_ramp_normal_left"] = maneuver_off_ramp_normal_left;
+  icon["maneuver_off_ramp_normal_right"] = maneuver_off_ramp_normal_right;
+  icon["maneuver_off_ramp_sharp_left"] = maneuver_off_ramp_sharp_left;
+  icon["maneuver_off_ramp_sharp_right"] = maneuver_off_ramp_sharp_right;
+  icon["maneuver_off_ramp_slight_left"] = maneuver_off_ramp_slight_left;
+  icon["maneuver_off_ramp_slight_right"] = maneuver_off_ramp_slight_right;
+  icon["maneuver_off_ramp_u_turn_left"] = maneuver_off_ramp_u_turn_left;
+  icon["maneuver_off_ramp_u_turn_right"] = maneuver_off_ramp_u_turn_right;
+  icon["maneuver_on_ramp_keep_left"] = maneuver_on_ramp_keep_left;
+  icon["maneuver_on_ramp_keep_right"] = maneuver_on_ramp_keep_right;
+  icon["maneuver_on_ramp_normal_left"] = maneuver_on_ramp_normal_left;
+  icon["maneuver_on_ramp_normal_right"] = maneuver_on_ramp_normal_right;
+  icon["maneuver_on_ramp_sharp_left"] = maneuver_on_ramp_sharp_left;
+  icon["maneuver_on_ramp_sharp_right"] = maneuver_on_ramp_sharp_right;
+  icon["maneuver_on_ramp_slight_left"] = maneuver_on_ramp_slight_left;
+  icon["maneuver_on_ramp_slight_right"] = maneuver_on_ramp_slight_right;
+  icon["maneuver_on_ramp_u_turn_left"] = maneuver_on_ramp_u_turn_left;
+  icon["maneuver_on_ramp_u_turn_right"] = maneuver_on_ramp_u_turn_right;
+  icon["maneuver_roundabout_enter_and_exit_ccw"] = maneuver_roundabout_enter_and_exit_ccw;
+  icon["maneuver_roundabout_enter_and_exit_ccw_normal_left"] = maneuver_roundabout_enter_and_exit_ccw_normal_left;
+  icon["maneuver_roundabout_enter_and_exit_ccw_normal_right"] = maneuver_roundabout_enter_and_exit_ccw_normal_right;
+  icon["maneuver_roundabout_enter_and_exit_ccw_sharp_left"] = maneuver_roundabout_enter_and_exit_ccw_sharp_left;
+  icon["maneuver_roundabout_enter_and_exit_ccw_sharp_right"] = maneuver_roundabout_enter_and_exit_ccw_sharp_right;
+  icon["maneuver_roundabout_enter_and_exit_ccw_slight_left"] = maneuver_roundabout_enter_and_exit_ccw_slight_left;
+  icon["maneuver_roundabout_enter_and_exit_ccw_slight_right"] = maneuver_roundabout_enter_and_exit_ccw_slight_right;
+  icon["maneuver_roundabout_enter_and_exit_ccw_straight"] = maneuver_roundabout_enter_and_exit_ccw_straight;
+  icon["maneuver_roundabout_enter_and_exit_ccw_u_turn"] = maneuver_roundabout_enter_and_exit_ccw_u_turn;
+  icon["maneuver_roundabout_enter_and_exit_cw"] = maneuver_roundabout_enter_and_exit_cw;
+  icon["maneuver_roundabout_enter_and_exit_cw_normal_left"] = maneuver_roundabout_enter_and_exit_cw_normal_left;
+  icon["maneuver_roundabout_enter_and_exit_cw_normal_right"] = maneuver_roundabout_enter_and_exit_cw_normal_right;
+  icon["maneuver_roundabout_enter_and_exit_cw_sharp_left"] = maneuver_roundabout_enter_and_exit_cw_sharp_left;
+  icon["maneuver_roundabout_enter_and_exit_cw_sharp_right"] = maneuver_roundabout_enter_and_exit_cw_sharp_right;
+  icon["maneuver_roundabout_enter_and_exit_cw_slight_left"] = maneuver_roundabout_enter_and_exit_cw_slight_left;
+  icon["maneuver_roundabout_enter_and_exit_cw_slight_right"] = maneuver_roundabout_enter_and_exit_cw_slight_right;
+  icon["maneuver_roundabout_enter_and_exit_cw_straight"] = maneuver_roundabout_enter_and_exit_cw_straight;
+  icon["maneuver_roundabout_enter_and_exit_cw_u_turn"] = maneuver_roundabout_enter_and_exit_cw_u_turn;
+  icon["maneuver_roundabout_enter_ccw"] = maneuver_roundabout_enter_ccw;
+  icon["maneuver_roundabout_enter_cw"] = maneuver_roundabout_enter_cw;
+  icon["maneuver_roundabout_exit_ccw"] = maneuver_roundabout_exit_ccw;
+  icon["maneuver_roundabout_exit_cw"] = maneuver_roundabout_exit_cw;
+  icon["maneuver_straight"] = maneuver_straight;
+  icon["maneuver_turn_normal_left"] = maneuver_turn_normal_left;
+  icon["maneuver_turn_normal_right"] = maneuver_turn_normal_right;
+  icon["maneuver_turn_sharp_left"] = maneuver_turn_sharp_left;
+  icon["maneuver_turn_sharp_right"] = maneuver_turn_sharp_right;
+  icon["maneuver_turn_slight_left"] = maneuver_turn_slight_left;
+  icon["maneuver_turn_slight_right"] = maneuver_turn_slight_right;
+  icon["maneuver_u_turn_left"] = maneuver_u_turn_left;
+  icon["maneuver_u_turn_right"] = maneuver_u_turn_right;
+};
 
 // status
 // call
@@ -258,13 +330,18 @@ void drawRecentNoti() {
 
 void drawDirections() {
   u8g2.setFont(u8g2_font_6x12_te);
-  u8g2.drawStr(3, 11+10, (incomingGmaps["icon"].as<String>()).c_str());
-  u8g2.drawStr(3, 21+10, (incomingGmaps["next"].as<String>()).c_str());
-  u8g2.drawStr(3, 31+10, (incomingGmaps["remain"].as<String>()).c_str());
-  u8g2.drawStr(3, 41+10, (incomingGmaps["eta"].as<String>()).c_str());
+  if (incomingGmaps["icon"].as<String>() != "null") u8g2.drawXBMP(3, 11, 24, 24, icon[incomingGmaps["icon"].as<String>()]);
+  else u8g2.drawStr(3, 11+10, (incomingGmaps["icon"].as<String>()).c_str());
+  String next = "Next: " + (incomingGmaps["next"].as<String>());
+  String remain = "Remain: " + (incomingGmaps["remain"].as<String>());
+  u8g2.drawStr(3, 31+10, next.c_str());
+  u8g2.drawStr(3, 41+10, remain.c_str());
+  u8g2.drawStr(3, 51+10, (incomingGmaps["eta"].as<String>()).c_str());
 }
 
 void setup() {
+  // loading icon to map for access
+  loadMapAsset();
   // begin gps serial
   neogps.begin(9600, SERIAL_8N1, 16, 17);
   Serial.begin(9600);
