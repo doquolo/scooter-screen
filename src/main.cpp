@@ -26,10 +26,6 @@ U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R2, /* clock=*/ 18, /* data=*/ 23, /* CS=*
 // init ble
 HardwareBLESerial &bleSerial = HardwareBLESerial::getInstance();
 
-// init gps
-NMEAGPS gps;
-gps_fix fix;
-HardwareSerial neogps(2);
 // current gps info
 struct GPSinfo : public std::mutex {
   float speed;
@@ -41,7 +37,6 @@ struct GPSinfo : public std::mutex {
 GPSinfo currentGPS = { };
 // month conversion
 String monthName[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-
 
 // arduinojson
 StaticJsonDocument<300> incomingData;
@@ -343,7 +338,6 @@ void setup() {
   // loading icon to map for access
   loadMapAsset();
   // begin gps serial
-  neogps.begin(9600, SERIAL_8N1, 16, 17);
   Serial.begin(9600);
   // define varible state
   isNotiNew.store(false);
@@ -356,8 +350,6 @@ void setup() {
       delay(1000);
     }
   }
-  // waiting to pick up gps data
-  u8g2.clearBuffer(); 
   // setup ble listener
   xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
   // setup gps
