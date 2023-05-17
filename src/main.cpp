@@ -178,10 +178,6 @@ void updateGPS(void * pvParameters) {
 TaskHandle_t updateData;
 void updatedata(void * pvParameters) {
   while (true) {
-    // BLE stuff
-    // this must be called regularly to perform BLE updates
-    bleSerial.poll(); 
-
     while (bleSerial.availableLines() > 0) {
         Serial.print("Raw: ");
         char line[256]; 
@@ -257,9 +253,13 @@ void updatedata(void * pvParameters) {
 // init button
 ezButton upbtn(21);
 ezButton downbtn(19);
+ezButton selbtn(22);
+ezButton pickbtn(15);
 
 // init page
 int page = 0;
+// init selection
+int sel = 0;
 
 // placeholder data
 String currentTime = "00:00";
@@ -298,11 +298,19 @@ void drawInfo(int gps_fix, String currentTime, String date, int gps_speed) {
 
 }
 
-void drawMusicInfo() {
+void drawMusicInfo(int sel, bool activate) {
+  String func[6] = {"play", "pause", "next", "previous", "volumeup", "volumedown"};
+  if (activate) {
+    // TODO: this function can only be executed once although its seem to be running as intended
+    Serial.println("Command: {t:\"music\", n:\"" + func[sel]+ "\"}\r\n");
+    String content = "{t:\"music\", n:\"" + func[sel]+ "\"}\r\n";
+    bleSerial.println(content.c_str());
+  }
   u8g2.setFont(u8g2_font_6x12_te);
   currentMusic.lock();
   u8g2.drawStr(3, 16+10, (currentMusic.artist).c_str());
   u8g2.drawStr(3, 30+10, (currentMusic.track).c_str());
+  u8g2.drawStr(3, 44+10, (String(sel) + ": " + func[sel]).c_str());
   currentMusic.unlock();
 }
 
@@ -337,11 +345,9 @@ void drawDirections() {
 void setup() {
   // loading icon to map for access
   loadMapAsset();
-  // begin gps serial
   Serial.begin(9600);
   // define varible state
   isNotiNew.store(false);
-  // u8g.setFont(u8g_font_tpssb);  // no need to set the font, as we are not drawing any strings
   u8g2.setColorIndex(1);  // set the color to white
   u8g2.begin();
   if (!bleSerial.beginAndSetupBLE("panhdtw")) {
@@ -357,6 +363,9 @@ void setup() {
 }
 
 void loop() {
+  // this must be called regularly to perform BLE updates
+  bleSerial.poll(); 
+  
   // tracking btn + switch page
   upbtn.loop();
   downbtn.loop();
@@ -396,7 +405,22 @@ void loop() {
       }
       case 1: { // music player 
         drawFrame_tab("Music");
-        drawMusicInfo();
+        // read nav button
+        selbtn.loop();
+        pickbtn.loop();
+        
+        bool activate = false;
+        if (pickbtn.isPressed()) {
+          if (sel == 5) sel = 0;
+          else sel++;
+        }
+        if (selbtn.isPressed()) {
+          Serial.print("Activating: ");
+          Serial.println(sel);
+          activate = true;
+        }
+
+        drawMusicInfo(sel, activate);
         break;
       }
       case 2: { // recent notification 
