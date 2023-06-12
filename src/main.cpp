@@ -243,17 +243,19 @@ int sel = 0;
 String currentTime = "00:00";
 String date = "Jan 1, 2023";
 
-void drawFrame_home() {
-  u8g2.drawXBMP(0, 0, 128, 64, frame_homepage);
-}
-
 void drawFrame_tab(String str) {
-  // u8g2.drawXBMP(0, 0, 128, 64, frame);
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(3, 9, str.c_str());
+  u8g2.drawLine(0, 9, 128, 9);
+  u8g2.setFont(u8g2_font_chikita_tr);
+  u8g2.drawStr(3, 7, str.c_str());
+  u8g2.drawStr(105, 7, currentTime.c_str());
 }
 
-void drawInfo(String currentTime, String date) {
+void drawInfo(String currentTime, String date, bool state) {
+  if (state) {
+    u8g2.drawXBMP(123, 0, 5, 7, connected);
+  } else {
+    u8g2.drawXBMP(123, 0, 5, 7, disconnected);
+  }
   u8g2.setColorIndex(1);
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(5, 50, date.c_str());
@@ -355,16 +357,15 @@ void loop() {
       drawCallInfo();
       continue;
     }
+    // TODO: update time via gadgetbridge
+    dateTime data = getTime(epoch, 25200, (millis() - init_msec) / 1000);
+    String hour = (data.hours < 10) ? "0"+String(data.hours) : String(data.hours);
+    String minute = (data.minutes < 10) ? "0"+String(data.minutes) : String(data.minutes);
+    currentTime = hour + ":" + minute;
+    date = monthName[data.month-1] + " " + String(data.date) + ", 20" + String(data.year);
     switch (page) {
       case 0: { // homepage 
-      // TODO: update time via gadgetbridge
-        // drawFrame_home();
-        dateTime data = getTime(epoch, 25200, (millis() - init_msec) / 1000);
-        String hour = (data.hours < 10) ? "0"+String(data.hours) : String(data.hours);
-        String minute = (data.minutes < 10) ? "0"+String(data.minutes) : String(data.minutes);
-        currentTime = hour + ":" + minute;
-        date = monthName[data.month-1] + " " + String(data.date) + ", 20" + String(data.year);
-        drawInfo(currentTime, date);
+        drawInfo(currentTime, date, bleSerial);
         break;
       }
       case 1: { // music player 
