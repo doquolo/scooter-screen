@@ -5,20 +5,20 @@
 #include <bits/stdc++.h>
 #include <ArduinoJson.h>
 #include <HardwareBLESerial.h>
-// gps
-#include <NMEAGPS.h>
-#include <HardwareSerial.h>
 // dual core stuff
 #ifdef __cplusplus
 #include <atomic>
 #else
 #include <stdatomic.h>
 #endif
-
 #include "bitmap.h"
 #include "ic_direction.h"
 
 using namespace std;
+
+// for testing
+long long int epoch = 1686551725;
+long long int init_msec = 0;
 
 // lcd
 U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R2, /* clock=*/ 18, /* data=*/ 23, /* CS=*/ 5); // ESP32
@@ -26,15 +26,6 @@ U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R2, /* clock=*/ 18, /* data=*/ 23, /* CS=*
 // init ble
 HardwareBLESerial &bleSerial = HardwareBLESerial::getInstance();
 
-// current gps info
-struct GPSinfo : public std::mutex {
-  float speed;
-  float latt;
-  float longt; 
-  float sat;
-  int hours, minutes, year, month, date;
-};
-GPSinfo currentGPS = { };
 // month conversion
 String monthName[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
@@ -133,8 +124,8 @@ atomic<bool> isNotiNew;
 
 // music
 struct musicinfo : public std::mutex{
-  String artist;
-  String track;
+  String artist = "";
+  String track = "";
 };
 musicinfo currentMusic = { };
 
@@ -149,32 +140,6 @@ bool incomingParser(String str) {
   return true;
 }
 
-TaskHandle_t GPS;
-void updateGPS(void * pvParameters) {
-    // init gps
-    NMEAGPS gps;
-    gps_fix fix;
-    HardwareSerial neogps(2);
-    neogps.begin(9600, SERIAL_8N1, 16, 17);
-    while (true) {
-      while (gps.available(neogps)) {
-            fix = gps.read();
-            currentGPS.lock();
-            currentGPS.speed = fix.speed_kph();
-            currentGPS.latt = fix.latitude();
-            currentGPS.longt = fix.longitude();
-            currentGPS.sat = fix.satellites;
-            currentGPS.hours = fix.dateTime.hours;
-            currentGPS.minutes = fix.dateTime.minutes;
-            currentGPS.year = fix.dateTime.full_year();
-            currentGPS.month = fix.dateTime.month;
-            currentGPS.date = fix.dateTime.date;
-            currentGPS.unlock();
-        }  
-       delay(250);
-    }
-}
-
 TaskHandle_t updateData;
 void updatedata(void * pvParameters) {
   while (true) {
@@ -184,8 +149,21 @@ void updatedata(void * pvParameters) {
         bleSerial.readLine(line, 256);
         String decodedMessage = String(line).substring(4, (strlen(line)-1));
         Serial.println(decodedMessage);
-
-        if (incomingParser(decodedMessage)) {
+        if (decodedMessage.substring(0, 7) == "etTime(") {
+          init_msec = millis();
+          int startIndex, stopIndex;
+          for (long long int i = 0; i < decodedMessage.length(); i++) {
+            if (String(decodedMessage[i]) == "(") {
+              startIndex = i;
+            } else if (String(decodedMessage[i]) == ")") {
+              stopIndex = i;
+              break;
+            }
+          }
+          String epoch_str = decodedMessage.substring(startIndex+1, stopIndex);
+          epoch = strtoll(epoch_str.c_str(), nullptr, 10);
+        }
+        else if (incomingParser(decodedMessage)) {
             if (incomingData["t"].as<String>() == "musicinfo"){
                 // saving data        
                 currentMusic.lock(); 
@@ -270,32 +248,21 @@ void drawFrame_home() {
 }
 
 void drawFrame_tab(String str) {
-  u8g2.drawXBMP(0, 0, 128, 64, frame);
+  // u8g2.drawXBMP(0, 0, 128, 64, frame);
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(3, 9, str.c_str());
 }
 
-void drawInfo(int gps_fix, String currentTime, String date, int gps_speed) {
+void drawInfo(String currentTime, String date) {
   u8g2.setColorIndex(1);
-
-  u8g2.setFont(u8g2_font_5x7_tr);
-  String topLine = "Sat: " + String(gps_fix);
-  u8g2.drawStr(3, 9, topLine.c_str());
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(5, 50, date.c_str());
-  u8g2.drawStr(95, 50, "km/h");
-  // // math time 
-  // int heading_len = gps.length();
-  // int totalPixel = (heading_len*6)+(heading_len-1);
-  // int totalEmptySpace = 42 - totalPixel;
-
-  // u8g2.drawStr(89+round(totalEmptySpace/2), 55, gps.c_str());
-
+  currentMusic.lock();
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(5, 59, String(currentMusic.track).c_str());
+  currentMusic.unlock();
   u8g2.setFont(u8g2_font_crox5hb_tn);
   u8g2.drawStr(3, 37, currentTime.c_str());
-  String speed = (gps_speed < 10) ? ("0"+String(gps_speed)) : String(gps_speed);
-  u8g2.drawStr(93, 40, speed.c_str());
-
 }
 
 void drawMusicInfo(int sel, bool activate) {
@@ -358,8 +325,6 @@ void setup() {
   }
   // setup ble listener
   xTaskCreatePinnedToCore(updatedata, "", 10000, NULL, 1, &updateData, 1);
-  // setup gps
-  xTaskCreatePinnedToCore(updateGPS, "", 10000, NULL, 1, &GPS, 0);
 }
 
 void loop() {
@@ -392,15 +357,14 @@ void loop() {
     }
     switch (page) {
       case 0: { // homepage 
-        drawFrame_home();
-        currentGPS.lock();
-        dateTime data = convertToLocalTime(currentGPS.year, currentGPS.month, currentGPS.date, currentGPS.hours, currentGPS.minutes, 7);
+      // TODO: update time via gadgetbridge
+        // drawFrame_home();
+        dateTime data = getTime(epoch, 25200, (millis() - init_msec) / 1000);
         String hour = (data.hours < 10) ? "0"+String(data.hours) : String(data.hours);
         String minute = (data.minutes < 10) ? "0"+String(data.minutes) : String(data.minutes);
         currentTime = hour + ":" + minute;
-        date = monthName[data.month-1] + " " + String(data.date) + ", " + String(data.year);
-        drawInfo(currentGPS.sat, currentTime, date, currentGPS.speed);
-        currentGPS.unlock();
+        date = monthName[data.month-1] + " " + String(data.date) + ", 20" + String(data.year);
+        drawInfo(currentTime, date);
         break;
       }
       case 1: { // music player 
